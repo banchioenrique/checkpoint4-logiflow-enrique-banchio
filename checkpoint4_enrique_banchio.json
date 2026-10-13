@@ -1,0 +1,226 @@
+{
+  "name": "Checkpoint 4 - Integraciones LogiFlow",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": { "item": [{ "mode": "everyMinute" }] },
+        "simple": false,
+        "filters": { "q": "is:unread -label:procesado" }
+      },
+      "id": "gmail-trigger-1",
+      "name": "Gmail Trigger - Email Entrante",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "credentials": {
+        "gmailOAuth2": { "id": "HqoDgDP47qfg7Biu", "name": "Gmail account" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.subject }}",
+              "rightValue": "auto-reply|out of office|undeliverable|respuesta automatica",
+              "operator": { "type": "string", "operation": "regex" }
+            },
+            {
+              "leftValue": "={{ $json.from.value[0].address }}",
+              "rightValue": "no-?reply",
+              "operator": { "type": "string", "operation": "regex" }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "if-antireply-1",
+      "name": "IF - Es Auto-Reply",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {},
+      "id": "noop-ignorar-1",
+      "name": "NoOp - Ignorar Auto-Reply",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [720, 220]
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 1,
+        "additionalFields": {},
+        "filtersUi": {
+          "filterValues": [
+            {
+              "propertyName": "email",
+              "operator": "EQ",
+              "value": "={{ $json.from.value[0].address }}"
+            }
+          ]
+        }
+      },
+      "id": "hubspot-search-1",
+      "name": "HubSpot - Buscar Contacto",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [720, 380],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "hubspotOAuth2Api": { "id": "CAMBIAR_ID_CREDENCIAL", "name": "HubSpot account" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-contacto-existe-1",
+      "name": "IF - Contacto Existe",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [960, 380]
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "update",
+        "contactId": "={{ $json.id }}",
+        "additionalFields": {
+          "lifecyclestage": "lead",
+          "hs_lead_status": "NEW"
+        }
+      },
+      "id": "hubspot-update-1",
+      "name": "HubSpot - Actualizar Contacto",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [1200, 300],
+      "credentials": {
+        "hubspotOAuth2Api": { "id": "CAMBIAR_ID_CREDENCIAL", "name": "HubSpot account" }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "additionalFields": {
+          "email": "={{ $('Gmail Trigger - Email Entrante').item.json.from.value[0].address }}",
+          "firstname": "={{ $('Gmail Trigger - Email Entrante').item.json.from.value[0].name }}",
+          "hs_lead_status": "NEW",
+          "lifecyclestage": "lead"
+        }
+      },
+      "id": "hubspot-create-1",
+      "name": "HubSpot - Crear Contacto",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [1200, 460],
+      "credentials": {
+        "hubspotOAuth2Api": { "id": "CAMBIAR_ID_CREDENCIAL", "name": "HubSpot account" }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "a1", "name": "lead_email", "type": "string", "value": "={{ $('Gmail Trigger - Email Entrante').item.json.from.value[0].address }}" },
+            { "id": "a2", "name": "lead_nombre", "type": "string", "value": "={{ $('Gmail Trigger - Email Entrante').item.json.from.value[0].name }}" },
+            { "id": "a3", "name": "asunto", "type": "string", "value": "={{ $('Gmail Trigger - Email Entrante').item.json.subject }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-limpiar-slack-1",
+      "name": "Set - Limpiar Payload (Slack)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1440, 380]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": { "__rl": true, "value": "CAMBIAR_CHANNEL_ID", "mode": "list" },
+        "text": "=Nuevo lead de LogiFlow: {{ $json.lead_nombre }} ({{ $json.lead_email }}) - Asunto: {{ $json.asunto }}",
+        "otherOptions": {}
+      },
+      "id": "slack-notif-1",
+      "name": "Slack - Notificar Equipo",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [1680, 380],
+      "credentials": {
+        "slackApi": { "id": "CAMBIAR_ID_CREDENCIAL", "name": "Slack account" }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "=Re: {{ $('Gmail Trigger - Email Entrante').item.json.subject }}",
+        "message": "=Hola {{ $('Gmail Trigger - Email Entrante').item.json.from.value[0].name }},\n\nGracias por tu consulta sobre nuestro servicio de logistica same day. En breve un asesor de LogiFlow se va a poner en contacto para darte el detalle de tarifas y modalidad segun tu volumen de envios.\n\nSaludos,\nLogiFlow",
+        "options": {
+          "replyToSenderOnly": true,
+          "threadId": "={{ $('Gmail Trigger - Email Entrante').item.json.threadId }}"
+        }
+      },
+      "id": "gmail-draft-1",
+      "name": "Gmail - Crear Borrador Respuesta",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [720, 540],
+      "credentials": {
+        "gmailOAuth2": { "id": "HqoDgDP47qfg7Biu", "name": "Gmail account" }
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger - Email Entrante": {
+      "main": [[{ "node": "IF - Es Auto-Reply", "type": "main", "index": 0 }]]
+    },
+    "IF - Es Auto-Reply": {
+      "main": [
+        [{ "node": "NoOp - Ignorar Auto-Reply", "type": "main", "index": 0 }],
+        [
+          { "node": "HubSpot - Buscar Contacto", "type": "main", "index": 0 },
+          { "node": "Gmail - Crear Borrador Respuesta", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "HubSpot - Buscar Contacto": {
+      "main": [[{ "node": "IF - Contacto Existe", "type": "main", "index": 0 }]]
+    },
+    "IF - Contacto Existe": {
+      "main": [
+        [{ "node": "HubSpot - Actualizar Contacto", "type": "main", "index": 0 }],
+        [{ "node": "HubSpot - Crear Contacto", "type": "main", "index": 0 }]
+      ]
+    },
+    "HubSpot - Actualizar Contacto": {
+      "main": [[{ "node": "Set - Limpiar Payload (Slack)", "type": "main", "index": 0 }]]
+    },
+    "HubSpot - Crear Contacto": {
+      "main": [[{ "node": "Set - Limpiar Payload (Slack)", "type": "main", "index": 0 }]]
+    },
+    "Set - Limpiar Payload (Slack)": {
+      "main": [[{ "node": "Slack - Notificar Equipo", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}
